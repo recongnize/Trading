@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from typing import Any
 
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal, QObject
-from PyQt6.QtGui import QAction, QCloseEvent, QShowEvent
+from PyQt6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -266,6 +267,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(
             "PA Agent — Trading Terminal（分析仅供参考，不构成投资建议）"
         )
+        # 设置窗口图标（任务栏 + 窗口标题栏都用这个）
+        _icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "pa_agent_icon.ico",
+        )
+        if os.path.isfile(_icon_path):
+            self.setWindowIcon(QIcon(_icon_path))
         # 窗口大小设为屏幕可用区域的 80%
         screen = QApplication.primaryScreen()
         if screen is not None:
@@ -692,6 +700,13 @@ class MainWindow(QMainWindow):
         self._fullscreen_btn.clicked.connect(self._on_toggle_fullscreen)
         ctrl_row.addWidget(self._fullscreen_btn)
 
+        # 统一给控制栏所有按钮加手型光标 — 让用户知道可以点
+        for i in range(ctrl_row.count()):
+            item = ctrl_row.itemAt(i)
+            w = item.widget() if item else None
+            if isinstance(w, QPushButton):
+                w.setCursor(Qt.CursorShape.PointingHandCursor)
+
         ctrl_row.addStretch()
 
         # 把单行布局加入控制栏主布局
@@ -1061,33 +1076,67 @@ class MainWindow(QMainWindow):
         self._load_project_into_ui(project)
 
     def _load_project_into_ui(self, project) -> None:
-        """将项目配置加载到界面。"""
-        # 设置数据源
-        idx = self._data_source_combo.findText(project.data_source)
-        if idx >= 0:
-            self._data_source_combo.setCurrentIndex(idx)
-        # 设置交易所
-        idx = self._tv_exchange_combo.findText(project.exchange)
-        if idx >= 0:
-            self._tv_exchange_combo.setCurrentIndex(idx)
-        # 设置品种
-        self._symbol_combo.setCurrentText(project.symbol)
-        # 设置周期
-        idx = self._tf_combo.findText(project.timeframe)
-        if idx >= 0:
-            self._tf_combo.setCurrentIndex(idx)
+        """将项目配置加载到界面，完整刷新数据源+K线+分析区。"""
+        # 先关掉信号连锁反应，避免 comboBox 互相触发打断流程
+        widgets_to_block = [
+            self._data_source_combo,
+            self._tv_exchange_combo,
+            self._symbol_combo,
+            self._tf_combo,
+        ]
+        previous_blocked = {w: w.blockSignals(True) for w in widgets_to_block}
+        try:
+            # 设置数据源
+            idx = self._data_source_combo.findText(project.data_source)
+            if idx >= 0:
+                self._data_source_combo.setCurrentIndex(idx)
+            # 设置交易所
+            idx = self._tv_exchange_combo.findText(project.exchange)
+            if idx >= 0:
+                self._tv_exchange_combo.setCurrentIndex(idx)
+            # 设置品种
+            self._symbol_combo.setCurrentText(project.symbol)
+            # 设置周期
+            idx = self._tf_combo.findText(project.timeframe)
+            if idx >= 0:
+                self._tf_combo.setCurrentIndex(idx)
+        finally:
+            for w, prev in previous_blocked.items():
+                w.blockSignals(prev)
+
+        # 如果数据源类型变了，先触发一次正式的数据源切换（会 connect/subscribe）
+        ds_kind = self._data_source_combo.currentData() or ""
+        cur_kind = self._current_data_source_kind()
+        if ds_kind and ds_kind != cur_kind:
+            try:
+                self._select_data_source_kind(ds_kind, switch=True)
+            except Exception:
+                logger.warning("项目切换：数据源切换 %s → %s 失败", cur_kind, ds_kind)
+
         # 恢复分析结果文本
         stream_panel = getattr(self, "_stream_panel", None)
         if stream_panel is not None:
             reasoning_edit = getattr(stream_panel, "_reasoning_edit", None)
             if reasoning_edit is not None:
                 reasoning_edit.setPlainText(project.reasoning_text)
+
         # 清空上一轮分析记录（增量分析需要重新提交）
         self._last_analysis_record = None
         self._last_analysis_frame = None
-        # 自动拉取数据
-        self._status_bar.showMessage(f"已切换到项目：{project.name}，正在拉取数据…")
-        QTimer.singleShot(300, self._on_fetch_data_clicked)
+
+        # 清空 FlowBar
+        fb = getattr(self, "_flow_bar", None)
+        if fb is not None:
+            fb.reset_all()
+
+        # 清空 SummaryStrip
+        ss = getattr(self, "_summary_strip", None)
+        if ss is not None:
+            ss.reset()
+
+        # 延迟拉取数据（让数据源 connect 先完成）
+        self._status_bar.showMessage(f"已切换到项目：{project.name}，正在拉取 {project.symbol} {project.timeframe} …")
+        QTimer.singleShot(500, self._on_fetch_data_clicked)
 
     def _on_add_project(self) -> None:
         """基于当前品种/周期新建项目。"""

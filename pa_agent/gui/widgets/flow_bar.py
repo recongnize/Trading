@@ -161,18 +161,20 @@ class FlowBar(QWidget):
             layout.addWidget(step, stretch=1)
             self._steps.append(step)
 
-        # Pulse timer
+        # Pulse timer (50ms = 20 FPS — smooth enough for pulse, lighter on CPU)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(40)
+        self._timer.start(50)
+        self._timer.stop()  # 初始 idle 状态，有 active 节点时再启动
 
     def _tick(self) -> None:
-        self._phase = (self._phase + 0.04) % 1.0
+        self._phase = (self._phase + 0.05) % 1.0
         for s in self._steps:
             if s._status == "active":
                 s._pulse_phase = self._phase
-                s.update()
-        self.update()  # repaint connecting lines
+        # 只触发一次整体重绘 — FlowBar 的 paintEvent 画连接线，
+        # 子节点 _PulseDot 会被 Qt 自动 repaint（如果它们自身设置了 WA_NeedUpdate）
+        self.update()
 
     # ── Public API (unchanged signatures) ──────────────────────────────────
     def set_step_status(self, index: int, status: str) -> None:
@@ -180,6 +182,14 @@ class FlowBar(QWidget):
             self._steps[index].set_status(status)
             if status == "active":
                 self._active_index = index
+                if not self._timer.isActive():
+                    self._timer.start()
+            elif status != "active" and self._active_index == index:
+                self._active_index = -1
+                # 没有 active 节点了 → 停 timer 省 CPU
+                if not any(s._status == "active" for s in self._steps):
+                    self._timer.stop()
+            self.update()
 
     def set_step_caption(self, index: int, text: str) -> None:
         if 0 <= index < len(self._steps):
@@ -187,9 +197,11 @@ class FlowBar(QWidget):
 
     def reset_all(self) -> None:
         self._active_index = -1
+        self._timer.stop()  # 重置后立即停掉动画
         for step, caption in zip(self._steps, _DEFAULT_CAPTIONS, strict=True):
             step.set_status("idle")
             step.set_caption(caption)
+        self.update()
 
     # ── paintEvent: connecting lines ───────────────────────────────────────
     def paintEvent(self, event) -> None:  # noqa: N802

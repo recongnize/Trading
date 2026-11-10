@@ -108,13 +108,18 @@ QPushButton {
 QPushButton:hover {
     background-color: #30363d;
     border-color: #38bdf8;
+    color: #7dd3fc;
 }
 QPushButton:pressed {
-    background-color: #161b22;
+    background-color: #0f1623;
+    border-color: #38bdf8;
+    padding-top: 7px;
+    padding-bottom: 5px;
 }
 QPushButton:disabled {
     color: #6e7681;
     background-color: #161b22;
+    border-color: #21262d;
 }
 QPushButton#primaryButton {
     background-color: #15803d;
@@ -122,7 +127,19 @@ QPushButton#primaryButton {
     font-weight: bold;
 }
 QPushButton#primaryButton:hover {
-    background-color: #16a34a;
+    background-color: #22c55e;
+    border-color: #4ade80;
+    color: #f0fdf4;
+}
+QPushButton#primaryButton:pressed {
+    background-color: #14532d;
+    padding-top: 7px;
+    padding-bottom: 5px;
+}
+QPushButton#primaryButton:disabled {
+    background-color: #1f2937;
+    border-color: #374151;
+    color: #6b7280;
 }
 QPushButton#dangerButton {
     border-color: #ef4444;
@@ -130,6 +147,7 @@ QPushButton#dangerButton {
 }
 QPushButton#dangerButton:hover {
     background-color: rgba(239,68,68,0.15);
+    color: #fca5a5;
 }
 
 QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QComboBox {
